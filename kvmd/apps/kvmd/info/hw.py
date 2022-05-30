@@ -57,23 +57,23 @@ class HwInfoSubmanager(BaseInfoSubmanager):
         self.__dt_cache: Dict[str, str] = {}
 
     async def get_state(self) -> Dict:
-        (model, serial, cpu_temp, throttling) = await asyncio.gather(
-            self.__read_dt_file("model"),
-            self.__read_dt_file("serial-number"),
-            self.__get_cpu_temp(),
-            self.__get_throttling(),
-        )
+        #(model, serial, cpu_temp, throttling) = await asyncio.gather(
+        #    self.__read_dt_file("model"),
+        #    self.__read_dt_file("serial-number"),
+        #    self.__get_cpu_temp(),
+        #    self.__get_throttling(),
+        #)
         return {
             "platform": {
-                "type": "rpi",
-                "base": model,
-                "serial": serial,
+                "type": "unknown",
+                "base": None,
+                "serial": None,
             },
             "health": {
                 "temp": {
-                    "cpu": cpu_temp,
+                    "cpu": None,
                 },
-                "throttling": throttling,
+                "throttling": None,
             },
         }
 

@@ -1,0 +1,110 @@
+FROM debian:11
+
+RUN echo "deb http://mirrors.ustc.edu.cn/debian bullseye contrib main non-free" > /etc/apt/sources.list \
+		&& echo "deb http://mirrors.ustc.edu.cn/debian/ bullseye-updates main contrib" >> /etc/apt/sources.list \
+		&& echo "deb http://mirrors.ustc.edu.cn/debian-security bullseye-security main contrib" >> /etc/apt/sources.list \
+		&& echo "deb http://mirrors.ustc.edu.cn/debian bullseye-backports contrib main non-free" >> /etc/apt/sources.list \
+		&& apt update && apt-get upgrade -y 
+RUN apt-get install -y apt-utils
+RUN apt-get install -y systemctl iptables
+RUN apt-get install -y p11-kit ca-certificates \
+		autoconf-archive \
+		help2man \
+		m4 \
+		vim \
+		git \
+		libjpeg-dev \
+		libevent-dev \
+		libldap2-dev \
+		libsasl2-dev \
+		util-linux \
+		libbsd-dev \
+		python3 \
+		freetype2-demos \
+		nginx \
+		libtesseract-dev \
+		tesseract-ocr \
+		tesseract-ocr-eng \
+		tesseract-ocr-rus \
+		tesseract-ocr-chi-sim
+
+RUN apt-get install -y ipmitool \
+		libgpiod-dev \
+		gpiod \
+		socat \
+		eslint \
+		janus \
+		v4l-utils \
+		dnsmasq \
+		iproute2 \
+		ipmitool \
+		zstd \
+		openssh-client \
+		openssh-server \
+		dos2unix \
+		parted \
+		e2fsprogs \
+		wpasupplicant \
+		hostapd \
+		npm
+
+#netctl \
+
+RUN apt-get install -y python-is-python3 \
+		python3-pip \
+		python3-mako \
+		python3-yaml \
+		python3-passlib \
+		python3-periphery \
+		python3-setproctitle \
+		python3-psutil \
+		python3-netifaces \
+		python3-systemd \
+		python3-dbus \
+		python3-pygments \
+		python3-pyghmi \
+		python3-pam \
+		python3-pillow \
+		python3-xlib \
+		python3-hidapi \
+		python3-six \
+		python3-pyrad \
+		python3-openssl \
+		python3-libgpiod \
+		python3-freetype
+
+RUN pip3 install tox pyserial janus serial spidev secrets asyncio aiohttp \
+		aiofiles dbus_next -i https://pypi.mirrors.ustc.edu.cn/simple/
+
+COPY testenv/requirements.txt requirements.txt
+
+RUN pip3 install -r requirements.txt -i https://pypi.mirrors.ustc.edu.cn/simple/
+
+# https://stackoverflow.com/questions/57534295
+WORKDIR /root
+RUN npm config set registry http://registry.npm.taobao.org/
+RUN npm install htmlhint -g \
+	&& npm install pug \
+	&& npm install pug-cli -g \
+	&& npm install @babel/eslint-parser -g
+WORKDIR /
+
+RUN git clone https://github.com/pikvm/ustreamer \
+	&& cd ustreamer \
+	&& make WITH_PYTHON=1 PREFIX=/usr DESTDIR=/ install \
+	&& cd - \
+	&& rm -rf ustreamer
+
+RUN mkdir -p \
+		/etc/kvmd/nginx /etc/kvmd/vnc \
+		/var/lib/kvmd/msd/images /var/lib/kvmd/msd/meta \
+		/opt/vc/bin
+
+COPY testenv/fakes/vcgencmd /opt/vc/bin/
+
+# debian11 container don't adopt /usr softlinks ... We have to create them
+# manually
+RUN ln -svf /bin/ip /usr/bin/ip
+RUN ln -svf /bin/systemctl /usr/bin/systemctl
+
+CMD /bin/bash

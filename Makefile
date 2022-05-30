@@ -1,8 +1,9 @@
 -include config.mk
 
 TESTENV_IMAGE ?= kvmd-testenv
-TESTENV_HID ?= /dev/ttyS10
-TESTENV_VIDEO ?= /dev/video0
+TESTENV_IMAGE_DEBIAN ?= kvmd-testenv-3.93-debian
+TESTENV_HID ?= /dev/ttyUSB1
+TESTENV_VIDEO ?= /dev/video2
 TESTENV_GPIO ?= /dev/gpiochip0
 TESTENV_RELAY ?= $(if $(shell ls /dev/hidraw0 2>/dev/null || true),/dev/hidraw0,)
 
@@ -10,7 +11,7 @@ LIBGPIOD_VERSION ?= 1.6.3
 
 USTREAMER_MIN_VERSION ?= $(shell grep -o 'ustreamer>=[^"]\+' PKGBUILD | sed 's/ustreamer>=//g')
 
-DEFAULT_PLATFORM ?= v2-hdmi-rpi4
+DEFAULT_PLATFORM ?= debian-hdmiusb-serialhid-usbrelay
 
 DOCKER ?= docker
 
@@ -70,6 +71,27 @@ testenv:
 			&& mv /etc/kvmd/vnc/ssl /src/testenv/.ssl/vnc \
 		"
 
+testenv-debian:
+	$(DOCKER) build \
+		$(if $(call optbool,$(NC)),--no-cache,) \
+		--rm \
+		--tag $(TESTENV_IMAGE_DEBIAN) \
+		-f testenv/Dockerfile-debian .
+	test -d testenv/.ssl || $(DOCKER) run --rm \
+			--volume `pwd`:/src:ro \
+			--volume `pwd`/testenv:/src/testenv:rw \
+		-t $(TESTENV_IMAGE_DEBIAN) bash -c " \
+			groupadd kvmd-nginx \
+			&& groupadd kvmd-vnc \
+			&& /src/scripts/kvmd-gencert --do-the-thing \
+			&& /src/scripts/kvmd-gencert --do-the-thing --vnc \
+			&& chown -R root:root /etc/kvmd/{nginx,vnc}/ssl \
+			&& chmod 664 /etc/kvmd/{nginx,vnc}/ssl/* \
+			&& chmod 775 /etc/kvmd/{nginx,vnc}/ssl \
+			&& mkdir /src/testenv/.ssl \
+			&& mv /etc/kvmd/nginx/ssl /src/testenv/.ssl/nginx \
+			&& mv /etc/kvmd/vnc/ssl /src/testenv/.ssl/vnc \
+		"
 
 tox: testenv
 	time $(DOCKER) run --rm \
@@ -135,6 +157,40 @@ run: testenv $(TESTENV_GPIO)
 			&& $(if $(CMD),$(CMD),python -m kvmd.apps.kvmd --run) \
 		"
 
+run-debian: testenv-debian
+	- $(DOCKER) run --rm --name kvmd \
+			--privileged \
+			--volume `pwd`/testenv/run:/run/kvmd:rw \
+			--volume `pwd`/testenv:/testenv:ro \
+			--volume `pwd`/kvmd:/kvmd:ro \
+			--volume `pwd`/web:/usr/share/kvmd/web:ro \
+			--volume `pwd`/extras:/usr/share/kvmd/extras:ro \
+			--volume `pwd`/configs:/usr/share/kvmd/configs.default:ro \
+			--volume `pwd`/contrib/keymaps:/usr/share/kvmd/keymaps:ro \
+			--device $(TESTENV_VIDEO):$(TESTENV_VIDEO) \
+			--device $(TESTENV_HID):$(TESTENV_HID) \
+			--device $(TESTENV_GPIO):$(TESTENV_GPIO) \
+			$(if $(TESTENV_RELAY),--device $(TESTENV_RELAY):$(TESTENV_RELAY),) \
+			--publish 8080:80/tcp \
+			--publish 8081:8081/tcp \
+			--publish 4430:443/tcp \
+		-it $(TESTENV_IMAGE_DEBIAN) /bin/bash -c " \
+			mount -t debugfs none /sys/kernel/debug \
+			&& cp -r /usr/share/kvmd/configs.default/nginx/* /etc/kvmd/nginx \
+			&& cp testenv/redirect-to-https.conf /etc/kvmd/nginx \
+			&& cp -a /testenv/.ssl/nginx /etc/kvmd/nginx/ssl \
+			&& cp -a /testenv/.ssl/vnc /etc/kvmd/vnc/ssl \
+			&& cp /usr/share/kvmd/configs.default/kvmd/*.yaml /etc/kvmd \
+			&& cp /usr/share/kvmd/configs.default/kvmd/*passwd /etc/kvmd \
+			&& cp /usr/share/kvmd/configs.default/kvmd/main/$(if $(P),$(P),$(DEFAULT_PLATFORM)).yaml /etc/kvmd/main.yaml \
+			&& mkdir -p /etc/kvmd/override.d \
+			&& cp /testenv/$(if $(P),$(P),$(DEFAULT_PLATFORM)).override.yaml /etc/kvmd/override.yaml \
+			&& cp /usr/share/kvmd/configs.default/kvmd/web.css /etc/kvmd \
+			&& nginx -c /etc/kvmd/nginx/nginx.conf -g 'user proxy; error_log stderr;' \
+			&& ln -s $(TESTENV_VIDEO) /dev/kvmd-video \
+			&& ln -s $(TESTENV_GPIO) /dev/kvmd-gpio \
+			&& $(if $(CMD),$(CMD),python -m kvmd.apps.kvmd --run) \
+		"
 
 run-cfg: testenv
 	- $(DOCKER) run --rm --name kvmd-cfg \
@@ -196,6 +252,27 @@ run-vnc: testenv
 			&& cp /testenv/$(if $(P),$(P),$(DEFAULT_PLATFORM)).override.yaml /etc/kvmd/override.yaml \
 			&& $(if $(CMD),$(CMD),python -m kvmd.apps.vnc --run) \
 		"
+
+run-vnc-debian: testenv-debian
+	- $(DOCKER) run --rm --name kvmd-vnc \
+			--volume `pwd`/testenv/run:/run/kvmd:rw \
+			--volume `pwd`/testenv:/testenv:ro \
+			--volume `pwd`/kvmd:/kvmd:ro \
+			--volume `pwd`/extras:/usr/share/kvmd/extras:ro \
+			--volume `pwd`/configs:/usr/share/kvmd/configs.default:ro \
+			--volume `pwd`/contrib/keymaps:/usr/share/kvmd/keymaps:ro \
+			--publish 5900:5900/tcp \
+		-it $(TESTENV_IMAGE_DEBIAN) /bin/bash -c " \
+			cp -a /testenv/.ssl/nginx /etc/kvmd/nginx/ssl \
+			&& cp -a /testenv/.ssl/vnc /etc/kvmd/vnc/ssl \
+			&& cp /usr/share/kvmd/configs.default/kvmd/*.yaml /etc/kvmd \
+			&& cp /usr/share/kvmd/configs.default/kvmd/*passwd /etc/kvmd \
+			&& cp /usr/share/kvmd/configs.default/kvmd/main/$(if $(P),$(P),$(DEFAULT_PLATFORM)).yaml /etc/kvmd/main.yaml \
+			&& mkdir -p /etc/kvmd/override.d \
+			&& cp /testenv/$(if $(P),$(P),$(DEFAULT_PLATFORM)).override.yaml /etc/kvmd/override.yaml \
+			&& $(if $(CMD),$(CMD),python -m kvmd.apps.vnc --run) \
+		"
+
 
 
 regen: keymap pug

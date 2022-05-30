@@ -40,7 +40,7 @@ class InfoManager:
             "system": SystemInfoSubmanager(config.kvmd.streamer.cmd),
             "auth": AuthInfoSubmanager(config.kvmd.auth.enabled),
             "meta": MetaInfoSubmanager(config.kvmd.info.meta),
-            "extras": ExtrasInfoSubmanager(config),
+            #"extras": ExtrasInfoSubmanager(config),
             "hw": HwInfoSubmanager(**config.kvmd.info.hw._unpack()),
             "fan": FanInfoSubmanager(**config.kvmd.info.fan._unpack()),
         }
